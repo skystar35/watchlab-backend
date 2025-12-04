@@ -1,3 +1,4 @@
+// src/index.js
 import Fastify from "fastify";
 import fastifyCors from "@fastify/cors";
 import { videoQueue } from "./queue.js";
@@ -9,18 +10,24 @@ await fastify.register(fastifyCors, {
   origin: "*",
 });
 
-// Health check
+// ───────────────────────────
+// Health Check
+// ───────────────────────────
 fastify.get("/", async () => {
   return { ok: true, message: "WatchLab backend is running" };
 });
 
-// Test Route (eski test route'un kalsın)
+// ───────────────────────────
+// Test Route  (kalsın, debug için)
+// ───────────────────────────
 fastify.get("/queue/test", async () => {
   const job = await videoQueue.add("demo", { ts: Date.now() });
   return { ok: true, jobID: job.id };
 });
 
-// Eski ana enqueue route'un da kalsın (uyumluluk için)
+// ───────────────────────────
+// Eski Enqueue Route  (uyumluluk için)
+// ───────────────────────────
 fastify.post("/enqueue", async (request, reply) => {
   const { note } = request.body ?? {};
 
@@ -32,11 +39,11 @@ fastify.post("/enqueue", async (request, reply) => {
   return { ok: true, jobID: job.id };
 });
 
-//
-// 🔥 YENİ: TrendMaker / WatchLab API
-//
+// ───────────────────────────
+// YENİ: WatchLab / TrendMaker API
+// ───────────────────────────
 
-// 1) Render job oluştur
+// 1) Render job oluştur (frontend burayı kullanacak)
 fastify.post("/v1/automontage/render", async (request, reply) => {
   try {
     const { videoUrl, duration } = request.body ?? {};
@@ -60,11 +67,10 @@ fastify.post("/v1/automontage/render", async (request, reply) => {
   }
 });
 
-// 2) Job durumunu kontrol et
+// 2) Job durumunu getir (REST tarzı)
 fastify.get("/v1/automontage/status/:id", async (request, reply) => {
   try {
     const { id } = request.params;
-
     const job = await videoQueue.getJob(id);
 
     if (!job) {
@@ -90,7 +96,39 @@ fastify.get("/v1/automontage/status/:id", async (request, reply) => {
   }
 });
 
-// Start server
+// 3) Aynı işi eski path ile de sun (GET /queue/status/:id)
+//    Böylece senin şu an test ettiğin URL de çalışacak.
+fastify.get("/queue/status/:id", async (request, reply) => {
+  try {
+    const { id } = request.params;
+    const job = await videoQueue.getJob(id);
+
+    if (!job) {
+      reply.code(404);
+      return { ok: false, message: "Job not found" };
+    }
+
+    const state = await job.getState();
+    const progress = job.progress ?? 0;
+    const result = job.returnvalue ?? null;
+
+    return {
+      ok: true,
+      jobId: job.id,
+      status: state,
+      progress,
+      result,
+    };
+  } catch (err) {
+    fastify.log.error(err);
+    reply.code(500);
+    return { ok: false, message: "Durum sorgulanamadı" };
+  }
+});
+
+// ───────────────────────────
+// Server Start
+// ───────────────────────────
 const port = process.env.PORT || 8080;
 
 try {
